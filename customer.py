@@ -89,13 +89,13 @@ def customer_update(customer_id):
 
     while True:
         email = input("Enter New Email: ")
-        if not valid_email(email):
+        if valid_email(email):
             break
         print("Invalid Email format!!! Enter Again")
 
     while True:
         phone = input("Enter New Phone: ")
-        if not valid_phone(phone):
+        if valid_phone(phone):
             break
         print(f"\n✗ Phone number must be 10 digits. Enter Again \n")
 
@@ -187,12 +187,12 @@ def train_ticket_booking(customer_id):
         print("\nSelect Seat Type")
         print("1. AC       - ₹500 per seat")
         print("2. Sleeper  - ₹300 per seat")
-        print("3. Seater   - ₹200 per seat")
+        print("3. General  - ₹200 per seat")
 
         seat_prices = {
             '1': ('AC', 500),
             '2': ('Sleeper', 300),
-            '3': ('Seater', 200)
+            '3': ('General', 200)
         }
 
         seat_choice = input("Enter choice (1-3): ").strip()
@@ -230,6 +230,16 @@ def train_ticket_booking(customer_id):
 
         fare = seat_count * price_per_seat
 
+        print("\n" + "=" * 60)
+        print(f"{'TICKET DETAILS'.center(60)}")
+        print("=" * 60)
+        print(f"Route                    : {departure} → {arrival}")
+        print(f"Journey Date             : {journey_date}")
+        print(f"Seat Type                : {seat_type}")
+        print(f"Number of Seats Booked   : {seat_count}")
+        print(f"Fare per Seat            : ₹{price_per_seat}")
+        print(f"Total Fare               : ₹{fare}")
+        print("=" * 60)
 
         confirm = input("Confirm Booking (yes/no): ").lower()
         if confirm != "yes":
@@ -280,13 +290,27 @@ def train_ticket_booking(customer_id):
 
 def cancel_ticket(customer_id):
     booking_id = input("Enter Booking ID: ").strip()
+    password = input("Enter your account password: ").strip()
 
     try:
         conn = get_connection()
         cur = conn.cursor()
 
+      
         cur.execute("""
-            SELECT train_number, seats, booking_time
+            SELECT password
+            FROM customer
+            WHERE customer_id=? AND active=1
+        """, (customer_id,))
+        user = cur.fetchone()
+
+        if not user or user[0] != password:
+            print(f"\n x Unauthorized cancellation. Incorrect password. \n")
+            return
+
+        
+        cur.execute("""
+            SELECT train_number, seats, fare, journey_date, booking_time
             FROM booking
             WHERE booking_id=? AND customer_id=? AND status='Booked'
         """, (booking_id, customer_id))
@@ -294,49 +318,61 @@ def cancel_ticket(customer_id):
         row = cur.fetchone()
 
         if not row:
-            print(" Invalid Booking ID or Ticket already cancelled")
+            print(" Invalid Booking ID or Ticket already cancelled.")
             return
 
-        booking_time = datetime.fromisoformat(row[2])
+        train_number, seats, fare, journey_date, booking_time = row
 
-        # 24-hour cancellation window
-        if datetime.now() > booking_time + timedelta(hours=24):
-            print(" Cancellation time expired (24 hours limit)")
+        journey_dt = datetime.strptime(journey_date, "%Y-%m-%d")
+
+       
+        if datetime.now() > journey_dt - timedelta(hours=24):
+            print(" Cancellation not allowed within 24 hours of departure.")
             return
 
-        
-        
+     
+        refund_amount = fare * 0.80  # 80% refund
 
-        confirm = input("Are you sure you want to cancel this ticket? (yes/no): ").lower()
+        
+        print("\nTicket Details")
+        print("-" * 40)
+        print(f"Booking ID   : {booking_id}")
+        print(f"Train Number : {train_number}")
+        print(f"Journey Date : {journey_date}")
+        print(f"Seats        : {seats}")
+        print(f"Fare Paid    : ₹{fare}")
+        print(f"Refund Amount: ₹{refund_amount}")
+        print("-" * 40)
 
+        confirm = input("Confirm cancellation? (yes/no): ").lower()
         if confirm != "yes":
-            print(" Cancellation aborted by user")
+            print(" Cancellation aborted by user.")
             return
 
-        # Cancel booking
+     
         cur.execute("""
             UPDATE booking
             SET status='Cancelled'
             WHERE booking_id=?
         """, (booking_id,))
 
-        # Restore seats
+       
         cur.execute("""
             UPDATE train
             SET available_seats = available_seats + ?
             WHERE train_number=?
-        """, (row[1], row[0]))
+        """, (seats, train_number))
 
         conn.commit()
 
         print("\n Ticket Cancelled Successfully")
+        print(f" Refund of ₹{refund_amount} will be processed to your account within 5-7 business days.")
 
     except Exception as e:
         print("x Database Error:", e)
 
     finally:
         conn.close()
-
 
 
 def view_booking_history(customer_id):
@@ -436,7 +472,7 @@ def customer_menu(customer_id):
         elif choice == '6':
             view_booking_history(customer_id)
         elif choice == '7':
-            print(f"\n Thank You! Have a great day! \n")
+            print(f"\n Thank You! Have a safe journey!!! \n")
             break
         else:
             print("Invalid Option")
